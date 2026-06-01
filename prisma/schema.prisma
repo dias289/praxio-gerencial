@@ -1,0 +1,42 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Ticket {
+  protocolo      String    @id
+  assunto        String    @default("")
+  status         String    @default("")
+  grupo          String    @default("")
+  consultor      String    @default("")
+  modulo         String    @default("")
+  cliente        String    @default("")
+  abertura       DateTime
+  primeirTramite DateTime?
+  ultimoTramite  DateTime?
+  conclusao      DateTime?
+  slaStatus      String    @default("pendente")
+  slaHorasUteis  Float?
+  coletadoEm     DateTime  @default(now()) @updatedAt
+
+  @@index([grupo, consultor])
+  @@index([abertura])
+  @@index([status])
+  @@index([slaStatus])
+  @@index([conclusao])
+}
+
+model ColecaoLog {
+  id           String    @id @default(cuid())
+  iniciadoEm   DateTime  @default(now())
+  concluidoEm  DateTime?
+  ticketsNovos Int       @default(0)
+  ticketsSla   Int       @default(0)
+  totalTickets Int       @default(0)
+  status       String    @default("em_andamento")
+  erro         String?
+}

@@ -1,7 +1,7 @@
-name: Collect Histórico (paralelo por grupo)
+name: Collect Histórico (re-run grupos pendentes)
 
 on:
-  workflow_dispatch:   # Disparo manual
+  workflow_dispatch:
 
 jobs:
   collect:
@@ -9,15 +9,11 @@ jobs:
     timeout-minutes: 35
 
     strategy:
-      fail-fast: false   # continua outros grupos mesmo se um falhar
+      fail-fast: false
       matrix:
         include:
           - grupo_id: "18"
             grupo_nome: "Siga-i ADM"
-          - grupo_id: "28"
-            grupo_nome: "Siga-i OPER"
-          - grupo_id: "30"
-            grupo_nome: "Siga Emissor"
           - grupo_id: "31"
             grupo_nome: "Siga One - ADM"
           - grupo_id: "32"

@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
+import { getServerSession } from "@/lib/session";
+import LogoutButton from "@/components/logout-button";
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -9,10 +11,17 @@ export const metadata: Metadata = {
   description: "Métricas de desempenho dos consultores de suporte Praxio",
 };
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  const session = await getServerSession();
+
   return (
     <html lang="pt-BR" className="h-full">
       <body className={`${inter.className} h-full bg-gray-50 text-gray-900 antialiased`}>
+        {session && (
+          <div className="fixed top-3 right-4 z-50">
+            <LogoutButton email={session.email} />
+          </div>
+        )}
         {children}
       </body>
     </html>

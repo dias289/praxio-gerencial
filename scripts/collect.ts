@@ -191,10 +191,12 @@ async function main() {
       if (buf) { const rows = parseXlsxBuffer(buf); allRows.push(...rows); log(`   ${status}: ${rows.length}`); }
     }
 
-    // Concluídos — um grupo por vez (evita timeout de export com 50k+ registros)
-    log('   Concluído (por grupo)...');
-    await page.goto(`${BASE}/Ticket`, { waitUntil: 'networkidle', timeout: 20_000 });
+    // Concluídos — usa customSearchMenu=29180 para obter TODOS os históricos
+    // (sem este bypass, a visão padrão retorna apenas um subconjunto limitado)
+    log('   Concluído (por grupo, com bypass completo)...');
+    await page.goto(`${BASE}/Ticket?customSearchMenu=29180`, { waitUntil: 'networkidle', timeout: 30_000 });
     await waitIdle(page);
+    await page.waitForTimeout(1000);
     await setFilter(page, 4, 'Concluído');
     for (const groupName of Object.values(GROUP_ID_MAP)) {
       await setFilter(page, 19, groupName);
@@ -202,6 +204,7 @@ async function main() {
       if (buf) { const rows = parseXlsxBuffer(buf); allRows.push(...rows); process.stdout.write(`   ${groupName}: ${rows.length}\n`); }
     }
     await setFilter(page, 19, '');
+    await setFilter(page, 4, ''); // limpa filtro de status
 
     log(`   Total bruto: ${allRows.length} linhas`);
 

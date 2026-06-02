@@ -26,12 +26,19 @@ const BASE   = 'https://portaldocliente.praxio.com.br';
 const EMAIL  = process.env.PORTAL_EMAIL ?? '';
 const SENHA  = process.env.PORTAL_SENHA  ?? '';
 
-// IDs dos grupos Siga (confirmados via diagnóstico)
-const GROUP_SQL = `([IdGrupoAtendimento] In (18, 28, 30, 31, 32))`;
 const GROUP_ID_MAP: Record<string, string> = {
   '18': 'Siga-i ADM',  '28': 'Siga-i OPER',
   '30': 'Siga Emissor','31': 'Siga One - ADM','32': 'Siga One - OPER',
 };
+
+// GRUPO_ID: quando definido, coleta apenas esse grupo (ex: "18").
+// Permite rodar 5 jobs em paralelo no GitHub Actions, cada um para um grupo.
+const GRUPO_ID = process.env.GRUPO_ID ?? '';  // '' = todos os grupos
+
+// SQL base filtrado pelo(s) grupo(s) alvo
+const GROUP_SQL = GRUPO_ID
+  ? `([IdGrupoAtendimento] = ${GRUPO_ID})`
+  : `([IdGrupoAtendimento] In (18, 28, 30, 31, 32))`;
 
 // Janela para buscar SLA: tickets abertos nas últimas 72h que ainda não têm 1º trâmite
 const SLA_WINDOW_HOURS = 72;
@@ -41,13 +48,10 @@ const SLA_WINDOW_HOURS = 72;
 //   completa    = todos os tickets históricos — lento, para coleta manual
 const MODO = (process.env.MODO_COLETA ?? 'incremental') as 'incremental' | 'completa';
 
-// SQL para modo incremental: filtra por último trâmite recente
 function getSqlFiltro(): string {
   if (MODO === 'completa') return GROUP_SQL;
   const cutoff = new Date(Date.now() - 7 * 24 * 3_600_000);
   const d = `${cutoff.getFullYear()}-${String(cutoff.getMonth()+1).padStart(2,'0')}-${String(cutoff.getDate()).padStart(2,'0')}`;
-  // Tenta filtrar por UltimoTramite >= cutoff OU DataAbertura >= cutoff
-  // Se o nome da coluna estiver errado, o portal ignora e retorna tudo
   return `(${GROUP_SQL}) AND ([UltimoTramite] >= '${d}' OR [DataAbertura] >= '${d}')`;
 }
 
@@ -223,8 +227,7 @@ async function main() {
     await page.waitForTimeout(500);
 
     if (MODO === 'incremental') {
-      // Incremental: aplica filtro de data + status Concluído
-      // O filtro de data limita a poucos tickets → export rápido sem precisar separar por grupo
+      // Incremental: filtro de data já aplicado no SQL → export único (poucos tickets)
       await page.evaluate((sql: string) => {
         (window as any).grdTicket?.ApplyFilter?.(sql);
       }, sqlFiltro);
@@ -237,8 +240,17 @@ async function main() {
         allRows.push(...rows);
         log(`   Concluído (incremental): ${rows.length}`);
       }
+    } else if (GRUPO_ID) {
+      // Completa com GRUPO_ID: SQL já filtrou o grupo → export direto, sem iterar
+      await setFilter(page, 4, 'Concluído');
+      const buf = await downloadXlsx(page, ctx, 'Concluído');
+      if (buf) {
+        const rows = parseXlsxBuffer(buf);
+        allRows.push(...rows);
+        log(`   Concluído (grupo ${GRUPO_ID}): ${rows.length}`);
+      }
     } else {
-      // Completa: exporta por grupo para evitar timeout de 50k linhas
+      // Completa sem GRUPO_ID: exporta por grupo para evitar limite de 50k linhas
       await setFilter(page, 4, 'Concluído');
       for (const groupName of Object.values(GROUP_ID_MAP)) {
         await setFilter(page, 19, groupName);

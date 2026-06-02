@@ -1,0 +1,62 @@
+name: Collect Histórico (paralelo por grupo)
+
+on:
+  workflow_dispatch:   # Disparo manual
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    strategy:
+      fail-fast: false   # continua outros grupos mesmo se um falhar
+      matrix:
+        include:
+          - grupo_id: "18"
+            grupo_nome: "Siga-i ADM"
+          - grupo_id: "28"
+            grupo_nome: "Siga-i OPER"
+          - grupo_id: "30"
+            grupo_nome: "Siga Emissor"
+          - grupo_id: "31"
+            grupo_nome: "Siga One - ADM"
+          - grupo_id: "32"
+            grupo_nome: "Siga One - OPER"
+
+    name: "Grupo ${{ matrix.grupo_nome }}"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - run: npm ci
+
+      - name: Cache Playwright
+        id: pw-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: pw-chromium-${{ hashFiles('package-lock.json') }}
+
+      - name: Install Playwright (sem cache)
+        if: steps.pw-cache.outputs.cache-hit != 'true'
+        run: npx playwright install chromium --with-deps
+
+      - name: Install Playwright deps (com cache)
+        if: steps.pw-cache.outputs.cache-hit == 'true'
+        run: npx playwright install-deps chromium
+
+      - name: "Coleta completa — ${{ matrix.grupo_nome }}"
+        run: npx tsx scripts/collect.ts
+        env:
+          MODO_COLETA: completa
+          GRUPO_ID: ${{ matrix.grupo_id }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          PORTAL_EMAIL: ${{ secrets.PORTAL_EMAIL }}
+          PORTAL_SENHA: ${{ secrets.PORTAL_SENHA }}
+          HORA_INICIO_UTIL: 8
+          HORA_FIM_UTIL: 18

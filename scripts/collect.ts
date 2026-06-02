@@ -36,6 +36,21 @@ const GROUP_ID_MAP: Record<string, string> = {
 // Janela para buscar SLA: tickets abertos nas últimas 72h que ainda não têm 1º trâmite
 const SLA_WINDOW_HOURS = 72;
 
+// Modo de coleta:
+//   incremental = apenas tickets recentes (últimos 7 dias) — rápido, para o cron
+//   completa    = todos os tickets históricos — lento, para coleta manual
+const MODO = (process.env.MODO_COLETA ?? 'incremental') as 'incremental' | 'completa';
+
+// SQL para modo incremental: filtra por último trâmite recente
+function getSqlFiltro(): string {
+  if (MODO === 'completa') return GROUP_SQL;
+  const cutoff = new Date(Date.now() - 7 * 24 * 3_600_000);
+  const d = `${cutoff.getFullYear()}-${String(cutoff.getMonth()+1).padStart(2,'0')}-${String(cutoff.getDate()).padStart(2,'0')}`;
+  // Tenta filtrar por UltimoTramite >= cutoff OU DataAbertura >= cutoff
+  // Se o nome da coluna estiver errado, o portal ignora e retorna tudo
+  return `(${GROUP_SQL}) AND ([UltimoTramite] >= '${d}' OR [DataAbertura] >= '${d}')`;
+}
+
 const prisma = new PrismaClient();
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -169,41 +184,69 @@ async function main() {
     await waitIdle(page);
     log('   ✓ Login OK');
 
+    log(`🔧 Modo: ${MODO}`);
+
     // ── Ativa pesquisa que bypassa escopo de usuário ───────────────────────
     await page.goto(`${BASE}/Ticket?customSearchMenu=29180`, { waitUntil: 'networkidle', timeout: 30_000 });
     await waitIdle(page);
-    await page.waitForTimeout(1000);
+    await page.waitForTimeout(500);
 
-    // Aplica filtro dos 5 grupos Siga
+    // Aplica filtro dos 5 grupos Siga (+ filtro de data no modo incremental)
+    const sqlFiltro = getSqlFiltro();
     await page.evaluate((sql: string) => {
       (window as any).grdTicket?.ApplyFilter?.(sql);
-    }, GROUP_SQL);
+    }, sqlFiltro);
     await waitIdle(page);
-    await page.waitForTimeout(1500);
+    await page.waitForTimeout(800);
 
     // ── Exporta todos os status ───────────────────────────────────────────
     const allRows: Record<string, string>[] = [];
 
-    // Em andamento, Pendente, Cancelado (todos os grupos juntos)
-    for (const status of ['Em andamento', 'Pendente cliente', 'Cancelado']) {
+    // Em andamento e Pendente (sempre pequenos, exporta sem filtro de grupo)
+    for (const status of ['Em andamento', 'Pendente cliente']) {
       await setFilter(page, 4, status);
       const buf = await downloadXlsx(page, ctx, status);
       if (buf) { const rows = parseXlsxBuffer(buf); allRows.push(...rows); log(`   ${status}: ${rows.length}`); }
     }
 
-    // Concluídos — usa customSearchMenu=29180 para obter TODOS os históricos
-    // (sem este bypass, a visão padrão retorna apenas um subconjunto limitado)
-    log('   Concluído (por grupo, com bypass completo)...');
+    // Cancelado: só na coleta completa
+    if (MODO === 'completa') {
+      await setFilter(page, 4, 'Cancelado');
+      const buf = await downloadXlsx(page, ctx, 'Cancelado');
+      if (buf) { const rows = parseXlsxBuffer(buf); allRows.push(...rows); log(`   Cancelado: ${rows.length}`); }
+    }
+
+    // Concluídos
+    log(`   Concluído (modo ${MODO})...`);
     await page.goto(`${BASE}/Ticket?customSearchMenu=29180`, { waitUntil: 'networkidle', timeout: 30_000 });
     await waitIdle(page);
-    await page.waitForTimeout(1000);
-    await setFilter(page, 4, 'Concluído');
-    for (const groupName of Object.values(GROUP_ID_MAP)) {
-      await setFilter(page, 19, groupName);
+    await page.waitForTimeout(500);
+
+    if (MODO === 'incremental') {
+      // Incremental: aplica filtro de data + status Concluído
+      // O filtro de data limita a poucos tickets → export rápido sem precisar separar por grupo
+      await page.evaluate((sql: string) => {
+        (window as any).grdTicket?.ApplyFilter?.(sql);
+      }, sqlFiltro);
+      await waitIdle(page);
+      await page.waitForTimeout(800);
+      await setFilter(page, 4, 'Concluído');
       const buf = await downloadXlsx(page, ctx, 'Concluído');
-      if (buf) { const rows = parseXlsxBuffer(buf); allRows.push(...rows); process.stdout.write(`   ${groupName}: ${rows.length}\n`); }
+      if (buf) {
+        const rows = parseXlsxBuffer(buf);
+        allRows.push(...rows);
+        log(`   Concluído (incremental): ${rows.length}`);
+      }
+    } else {
+      // Completa: exporta por grupo para evitar timeout de 50k linhas
+      await setFilter(page, 4, 'Concluído');
+      for (const groupName of Object.values(GROUP_ID_MAP)) {
+        await setFilter(page, 19, groupName);
+        const buf = await downloadXlsx(page, ctx, 'Concluído');
+        if (buf) { const rows = parseXlsxBuffer(buf); allRows.push(...rows); process.stdout.write(`   ${groupName}: ${rows.length}\n`); }
+      }
+      await setFilter(page, 19, '');
     }
-    await setFilter(page, 19, '');
     await setFilter(page, 4, ''); // limpa filtro de status
 
     log(`   Total bruto: ${allRows.length} linhas`);

@@ -1,14 +1,12 @@
-name: Collect Praxio Data (Incremental)
+name: Collect Praxio Data (Completa / Histórico)
 
 on:
-  schedule:
-    - cron: '*/30 * * * *'   # A cada 30 minutos
-  workflow_dispatch:
+  workflow_dispatch:   # Somente disparo manual
 
 jobs:
   collect:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 60
 
     steps:
       - uses: actions/checkout@v4
@@ -35,10 +33,10 @@ jobs:
         if: steps.pw-cache.outputs.cache-hit == 'true'
         run: npx playwright install-deps chromium
 
-      - name: Coleta incremental (últimos 7 dias)
+      - name: Coleta completa (todo o histórico)
         run: npx tsx scripts/collect.ts
         env:
-          MODO_COLETA: incremental
+          MODO_COLETA: completa
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           PORTAL_EMAIL: ${{ secrets.PORTAL_EMAIL }}
           PORTAL_SENHA: ${{ secrets.PORTAL_SENHA }}

@@ -44,12 +44,19 @@ const GROUP_SQL = GRUPO_ID
 const SLA_WINDOW_HOURS = 72;
 
 // Modo de coleta:
-//   incremental = apenas tickets recentes (últimos 7 dias) — rápido, para o cron
-//   completa    = todos os tickets históricos — lento, para coleta manual
-const MODO = (process.env.MODO_COLETA ?? 'incremental') as 'incremental' | 'completa';
+//   incremental  = apenas tickets recentes (últimos 7 dias) — rápido, para o cron
+//   historico    = usa filtro customSearchMenu=29221 ("Tickets 2025-2026") — 1 export
+//   completa     = todos os tickets históricos por grupo — lento, sem filtro de data
+const MODO = (process.env.MODO_COLETA ?? 'incremental') as 'incremental' | 'historico' | 'completa';
+
+// IDs das pesquisas salvas no portal (descobertos via XHR interception)
+const SEARCH_ID = {
+  bypass:     29180,  // bypass original — todos os tickets sem filtro de data
+  todosStatus: 29221, // "Tickets concluídos / abertos / em andamento / pendente"
+};
 
 function getSqlFiltro(): string {
-  if (MODO === 'completa') return GROUP_SQL;
+  if (MODO === 'completa' || MODO === 'historico') return GROUP_SQL;
   const cutoff = new Date(Date.now() - 7 * 24 * 3_600_000);
   const d = `${cutoff.getFullYear()}-${String(cutoff.getMonth()+1).padStart(2,'0')}-${String(cutoff.getDate()).padStart(2,'0')}`;
   return `(${GROUP_SQL}) AND ([UltimoTramite] >= '${d}' OR [DataAbertura] >= '${d}')`;
@@ -188,14 +195,14 @@ async function main() {
     await waitIdle(page);
     log('   ✓ Login OK');
 
-    log(`🔧 Modo: ${MODO}`);
+    log(`🔧 Modo: ${MODO}${GRUPO_ID ? ` | Grupo: ${GRUPO_ID}` : ''}`);
 
-    // ── Ativa pesquisa que bypassa escopo de usuário ───────────────────────
-    await page.goto(`${BASE}/Ticket?customSearchMenu=29180`, { waitUntil: 'networkidle', timeout: 30_000 });
+    // ── Escolhe a pesquisa salva conforme o modo ───────────────────────────
+    const searchId = MODO === 'historico' ? SEARCH_ID.todosStatus : SEARCH_ID.bypass;
+    await page.goto(`${BASE}/Ticket?customSearchMenu=${searchId}`, { waitUntil: 'networkidle', timeout: 30_000 });
     await waitIdle(page);
     await page.waitForTimeout(500);
 
-    // Aplica filtro dos 5 grupos Siga (+ filtro de data no modo incremental)
     const sqlFiltro = getSqlFiltro();
     await page.evaluate((sql: string) => {
       (window as any).grdTicket?.ApplyFilter?.(sql);
@@ -203,63 +210,57 @@ async function main() {
     await waitIdle(page);
     await page.waitForTimeout(800);
 
-    // ── Exporta todos os status ───────────────────────────────────────────
+    // ── Exporta tickets ────────────────────────────────────────────────────
     const allRows: Record<string, string>[] = [];
 
-    // Em andamento e Pendente (sempre pequenos, exporta sem filtro de grupo)
-    for (const status of ['Em andamento', 'Pendente cliente']) {
-      await setFilter(page, 4, status);
-      const buf = await downloadXlsx(page, ctx, status);
-      if (buf) { const rows = parseXlsxBuffer(buf); allRows.push(...rows); log(`   ${status}: ${rows.length}`); }
-    }
+    if (MODO === 'historico') {
+      // Modo histórico: filtro 29221 já tem todos os status de 2025-2026
+      // Exporta tudo de uma vez (dataset menor = sem risco de timeout 50k)
+      log('   Exportando todos os status (filtro 2025-2026)...');
+      const buf = await downloadXlsx(page, ctx, 'todos');
+      if (buf) { const rows = parseXlsxBuffer(buf); allRows.push(...rows); log(`   Total: ${rows.length}`); }
 
-    // Cancelado: só na coleta completa
-    if (MODO === 'completa') {
-      await setFilter(page, 4, 'Cancelado');
-      const buf = await downloadXlsx(page, ctx, 'Cancelado');
-      if (buf) { const rows = parseXlsxBuffer(buf); allRows.push(...rows); log(`   Cancelado: ${rows.length}`); }
-    }
-
-    // Concluídos
-    log(`   Concluído (modo ${MODO})...`);
-    await page.goto(`${BASE}/Ticket?customSearchMenu=29180`, { waitUntil: 'networkidle', timeout: 30_000 });
-    await waitIdle(page);
-    await page.waitForTimeout(500);
-
-    if (MODO === 'incremental') {
-      // Incremental: filtro de data já aplicado no SQL → export único (poucos tickets)
-      await page.evaluate((sql: string) => {
-        (window as any).grdTicket?.ApplyFilter?.(sql);
-      }, sqlFiltro);
+    } else if (MODO === 'incremental') {
+      // Incremental: exporta status ativos + concluídos recentes
+      for (const status of ['Em andamento', 'Pendente cliente']) {
+        await setFilter(page, 4, status);
+        const buf = await downloadXlsx(page, ctx, status);
+        if (buf) { const rows = parseXlsxBuffer(buf); allRows.push(...rows); log(`   ${status}: ${rows.length}`); }
+      }
+      await page.goto(`${BASE}/Ticket?customSearchMenu=${searchId}`, { waitUntil: 'networkidle', timeout: 30_000 });
+      await waitIdle(page);
+      await page.waitForTimeout(500);
+      await page.evaluate((sql: string) => { (window as any).grdTicket?.ApplyFilter?.(sql); }, sqlFiltro);
       await waitIdle(page);
       await page.waitForTimeout(800);
       await setFilter(page, 4, 'Concluído');
       const buf = await downloadXlsx(page, ctx, 'Concluído');
-      if (buf) {
-        const rows = parseXlsxBuffer(buf);
-        allRows.push(...rows);
-        log(`   Concluído (incremental): ${rows.length}`);
-      }
-    } else if (GRUPO_ID) {
-      // Completa com GRUPO_ID: SQL já filtrou o grupo → export direto, sem iterar
-      await setFilter(page, 4, 'Concluído');
-      const buf = await downloadXlsx(page, ctx, 'Concluído');
-      if (buf) {
-        const rows = parseXlsxBuffer(buf);
-        allRows.push(...rows);
-        log(`   Concluído (grupo ${GRUPO_ID}): ${rows.length}`);
-      }
+      if (buf) { const rows = parseXlsxBuffer(buf); allRows.push(...rows); log(`   Concluído (recentes): ${rows.length}`); }
+      await setFilter(page, 4, '');
+
     } else {
-      // Completa sem GRUPO_ID: exporta por grupo para evitar limite de 50k linhas
+      // Completa: por status e por grupo (dataset grande, sem filtro de data)
+      for (const status of ['Em andamento', 'Pendente cliente', 'Cancelado']) {
+        await setFilter(page, 4, status);
+        const buf = await downloadXlsx(page, ctx, status);
+        if (buf) { const rows = parseXlsxBuffer(buf); allRows.push(...rows); log(`   ${status}: ${rows.length}`); }
+      }
+      await page.goto(`${BASE}/Ticket?customSearchMenu=${searchId}`, { waitUntil: 'networkidle', timeout: 30_000 });
+      await waitIdle(page);
+      await page.waitForTimeout(500);
+      await page.evaluate((sql: string) => { (window as any).grdTicket?.ApplyFilter?.(sql); }, sqlFiltro);
+      await waitIdle(page);
+      await page.waitForTimeout(800);
       await setFilter(page, 4, 'Concluído');
-      for (const groupName of Object.values(GROUP_ID_MAP)) {
+      const grupos = GRUPO_ID ? [GROUP_ID_MAP[GRUPO_ID]].filter(Boolean) : Object.values(GROUP_ID_MAP);
+      for (const groupName of grupos) {
         await setFilter(page, 19, groupName);
         const buf = await downloadXlsx(page, ctx, 'Concluído');
-        if (buf) { const rows = parseXlsxBuffer(buf); allRows.push(...rows); process.stdout.write(`   ${groupName}: ${rows.length}\n`); }
+        if (buf) { const rows = parseXlsxBuffer(buf); allRows.push(...rows); log(`   Concluído ${groupName}: ${rows.length}`); }
       }
       await setFilter(page, 19, '');
+      await setFilter(page, 4, '');
     }
-    await setFilter(page, 4, ''); // limpa filtro de status
 
     log(`   Total bruto: ${allRows.length} linhas`);
 

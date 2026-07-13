@@ -1,24 +1,17 @@
-name: Collect Histórico (re-run grupos pendentes)
+name: Recalcular SLA do Backlog (diário)
+
+# Recalcula o "tempo útil sob o time" de todos os tickets em aberto.
+# É mais pesado (acessa o detalhe de cada ticket), por isso roda 1x/dia.
 
 on:
+  schedule:
+    - cron: '0 5 * * *'   # 05:00 UTC = 02:00 BRT
   workflow_dispatch:
 
 jobs:
-  collect:
+  sla:
     runs-on: ubuntu-latest
-    timeout-minutes: 35
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - grupo_id: "30"
-            grupo_nome: "Siga Emissor"
-            delay: 0
-          - grupo_id: "32"
-            grupo_nome: "Siga One - OPER"
-            delay: 30
-
-    name: "Grupo ${{ matrix.grupo_nome }}"
+    timeout-minutes: 60
 
     steps:
       - uses: actions/checkout@v4
@@ -27,30 +20,21 @@ jobs:
           node-version: '22'
           cache: 'npm'
       - run: npm ci
-
       - name: Cache Playwright
         id: pw-cache
         uses: actions/cache@v4
         with:
           path: ~/.cache/ms-playwright
           key: pw-chromium-${{ hashFiles('package-lock.json') }}
-
       - name: Install Playwright (sem cache)
         if: steps.pw-cache.outputs.cache-hit != 'true'
         run: npx playwright install chromium --with-deps
-
       - name: Install Playwright deps (com cache)
         if: steps.pw-cache.outputs.cache-hit == 'true'
         run: npx playwright install-deps chromium
-
-      - name: Aguarda Neon acordar
-        run: sleep ${{ matrix.delay }}
-
-      - name: "Coleta completa — ${{ matrix.grupo_nome }}"
-        run: npx tsx scripts/collect.ts
+      - name: Recalcular SLA do backlog
+        run: npx tsx scripts/collect-sla.ts
         env:
-          MODO_COLETA: completa
-          GRUPO_ID: ${{ matrix.grupo_id }}
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           PORTAL_EMAIL: ${{ secrets.PORTAL_EMAIL }}
           PORTAL_SENHA: ${{ secrets.PORTAL_SENHA }}

@@ -16,7 +16,10 @@ export default async function RootLayout({ children }: { children: React.ReactNo
 
   return (
     <html lang="pt-BR" className="h-full">
-      <body className={`${inter.className} h-full bg-gray-50 text-gray-900 antialiased`}>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: `try{var t=localStorage.getItem('tema');if(t==='dark'||(!t&&window.matchMedia('(prefers-color-scheme:dark)').matches)){document.documentElement.classList.add('dark');}}catch(e){}` }} />
+      </head>
+      <body className={`${inter.className} h-full bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100 antialiased`}>
         {session && (
           <div className="fixed top-3 right-4 z-50">
             <LogoutButton email={session.email} />

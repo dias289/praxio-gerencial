@@ -1,0 +1,64 @@
+name: Coleta vpabx (chamadas + 2FA por e-mail)
+
+# Coleta chamadas do vpabx. O 2FA é lido automaticamente do e-mail (IMAP).
+# Disparo manual: escolha 'incremental' (mês atual + anterior) ou 'mensal' (histórico).
+
+on:
+  schedule:
+    - cron: '0 6 * * *'   # diário 06:00 UTC = 03:00 BRT (modo incremental)
+  workflow_dispatch:
+    inputs:
+      modo:
+        description: 'Modo de coleta'
+        type: choice
+        options: [incremental, mensal]
+        default: incremental
+      inicio:
+        description: 'Mês inicial (piso) no modo mensal — YYYY-MM'
+        required: false
+        default: '2022-01'
+
+jobs:
+  collect-vpabx:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - run: npm ci
+
+      - name: Cache Playwright
+        id: pw-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: pw-chromium-${{ hashFiles('package-lock.json') }}
+
+      - name: Install Playwright (sem cache)
+        if: steps.pw-cache.outputs.cache-hit != 'true'
+        run: npx playwright install chromium --with-deps
+
+      - name: Install Playwright deps (com cache)
+        if: steps.pw-cache.outputs.cache-hit == 'true'
+        run: npx playwright install-deps chromium
+
+      - name: Coleta vpabx
+        run: npx tsx scripts/collect-vpabx.ts
+        env:
+          MODO_COLETA: ${{ github.event.inputs.modo }}
+          COLETA_INICIO: ${{ github.event.inputs.inicio }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          VPABX_URL:  ${{ secrets.VPABX_URL }}
+          VPABX_USER: ${{ secrets.VPABX_USER }}
+          VPABX_PASS: ${{ secrets.VPABX_PASS }}
+          IMAP_HOST:   ${{ secrets.IMAP_HOST }}
+          IMAP_PORT:   ${{ secrets.IMAP_PORT }}
+          IMAP_SECURE: ${{ secrets.IMAP_SECURE }}
+          IMAP_USER:   ${{ secrets.IMAP_USER }}
+          IMAP_PASS:   ${{ secrets.IMAP_PASS }}

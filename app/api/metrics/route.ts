@@ -16,13 +16,19 @@ export function grupoToTime(grupo: string): string {
   return 'Outros';
 }
 
+// "Em aberto" (backlog) = os status que aparecem em "Meus itens" no portal.
+// Snapshot do estado atual — independente do período selecionado.
+const STATUS_ABERTOS = ['Em andamento', 'Pendente cliente'];
+
 /**
  * GET /api/metrics
- * Query params:
- *   periodo   = "mes" | "trimestre" | "ano" | "tudo" | "2023" | "2024" | ...
- *   mes       = "1".."12"  (opcional; só usado quando periodo é um ano específico)
+ *   periodo   = "mes" | "trimestre" | "ano" | "tudo" | "2023" | ...
+ *   mes       = "1".."12"
  *   time      = "Administrativo" | "Operacional" | "todos"
- *   consultor = nome do consultor | "todos"
+ *   consultor = nome | "todos"
+ *
+ * Fluxo (volume, concluídos, série mensal) respeita o período.
+ * Estoque (em aberto, SLA do backlog, TMA) é SEMPRE o estado atual (snapshot).
  */
 export async function GET(req: NextRequest) {
   const sp         = req.nextUrl.searchParams;
@@ -31,7 +37,6 @@ export async function GET(req: NextRequest) {
   const timeFiltro = sp.get('time')    ?? 'todos';
   const consultor  = sp.get('consultor') ?? 'todos';
 
-  // Define data de início/fim do período
   const agora = new Date();
   let dataInicio: Date | null = null;
   let dataFim:    Date | null = null;
@@ -41,11 +46,9 @@ export async function GET(req: NextRequest) {
 
   if (anoEspecifico) {
     if (mesEspecifico && mesEspecifico >= 1 && mesEspecifico <= 12) {
-      // Ano + mês específico (ex: março/2024)
       dataInicio = new Date(anoEspecifico, mesEspecifico - 1, 1);
       dataFim    = new Date(anoEspecifico, mesEspecifico,     1);
     } else {
-      // Ano completo
       dataInicio = new Date(anoEspecifico, 0, 1);
       dataFim    = new Date(anoEspecifico + 1, 0, 1);
     }
@@ -58,9 +61,14 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  const where: any = {};
+  // Filtro de time/consultor (comum aos dois conjuntos)
+  const filtroTimeConsultor: any = {};
+  if (timeFiltro !== 'todos' && TIMES[timeFiltro]) filtroTimeConsultor.grupo = { in: TIMES[timeFiltro] };
+  if (consultor !== 'todos') filtroTimeConsultor.consultor = consultor;
+
+  // ── FLUXO: tickets do período (volume, concluídos, série) ──────────────────
+  const where: any = { ...filtroTimeConsultor };
   if (dataInicio && dataFim) {
-    // Período fechado (ano ou mês específico)
     where.OR = [
       { abertura:  { gte: dataInicio, lt: dataFim } },
       { conclusao: { gte: dataInicio, lt: dataFim } },
@@ -71,160 +79,177 @@ export async function GET(req: NextRequest) {
       { conclusao: { gte: dataInicio } },
     ];
   }
-  if (timeFiltro !== 'todos' && TIMES[timeFiltro]) {
-    where.grupo = { in: TIMES[timeFiltro] };
-  }
-  if (consultor !== 'todos') where.consultor = consultor;
-
   const tickets = await prisma.ticket.findMany({
     where,
     select: {
-      protocolo:      true,
-      status:         true,
-      grupo:          true,
-      consultor:      true,
-      abertura:       true,
-      primeirTramite: true,
-      conclusao:      true,
-      ultimoTramite:  true,
-      slaStatus:      true,
-      slaHorasUteis:  true,
+      protocolo: true, status: true, grupo: true, consultor: true,
+      abertura: true, conclusao: true, ultimoTramite: true,
     },
     orderBy: { abertura: 'asc' },
   });
 
-  // Helper: ticket foi concluído DENTRO do período selecionado
+  // ── ESTOQUE: tickets em aberto AGORA (snapshot, sem período) ────────────────
+  const abertos = await prisma.ticket.findMany({
+    where: { ...filtroTimeConsultor, status: { in: STATUS_ABERTOS } },
+    select: { grupo: true, consultor: true, slaStatus: true, slaHorasUteis: true },
+  });
+
   const concluidoNoPeriodo = (t: { status: string; conclusao: Date | null }) =>
     t.status === 'Concluído' &&
     (!dataInicio || (t.conclusao !== null && t.conclusao >= dataInicio));
 
-  // ── KPIs globais ──────────────────────────────────────────────────────────
+  // ── KPIs globais ───────────────────────────────────────────────────────────
   const total      = tickets.length;
   const concluidos = tickets.filter(concluidoNoPeriodo).length;
-  const emAberto   = tickets.filter(t => t.status === 'Em andamento' || t.status === 'Pendente cliente').length;
-  const slaDentro  = tickets.filter(t => t.slaStatus === 'dentro').length;
-  const slaTotal   = tickets.filter(t => t.slaStatus !== 'pendente').length;
+  const emAberto   = abertos.length;
+  const slaDentro  = abertos.filter(t => t.slaStatus === 'dentro').length;
+  const slaTotal   = abertos.filter(t => t.slaStatus !== 'pendente').length;
   const slaPercent = slaTotal > 0 ? Math.round((slaDentro / slaTotal) * 100) : 0;
-  const horasArr   = tickets.filter(t => t.slaHorasUteis !== null);
+  const horasArr   = abertos.filter(t => t.slaHorasUteis !== null);
   const tmaMedio   = horasArr.length > 0
     ? Math.round(horasArr.reduce((s, t) => s + t.slaHorasUteis!, 0) / horasArr.length * 10) / 10
     : null;
 
-  // ── Por time (apenas tickets com consultor para bater com a soma da tabela) ──
-  const timeMap = new Map<string, { total: number; concluidos: number; emAberto: number; slaDentro: number; slaTotal: number }>();
+  // ── Por time ────────────────────────────────────────────────────────────────
+  const timeFlow = new Map<string, { total: number; concluidos: number }>();
   for (const t of tickets) {
-    if (!t.consultor) continue; // exclui sem responsável (mesma regra da tabela)
+    if (!t.consultor) continue;
     const time = grupoToTime(t.grupo);
-    if (!timeMap.has(time)) timeMap.set(time, { total: 0, concluidos: 0, emAberto: 0, slaDentro: 0, slaTotal: 0 });
-    const tm = timeMap.get(time)!;
-    tm.total++;
-    if (concluidoNoPeriodo(t)) tm.concluidos++;
-    if (t.status === 'Em andamento' || t.status === 'Pendente cliente') tm.emAberto++;
-    if (t.slaStatus === 'dentro') { tm.slaDentro++; tm.slaTotal++; }
-    if (t.slaStatus === 'fora') tm.slaTotal++;
+    const tm = timeFlow.get(time) ?? { total: 0, concluidos: 0 };
+    tm.total++; if (concluidoNoPeriodo(t)) tm.concluidos++;
+    timeFlow.set(time, tm);
   }
-  const porTime = Array.from(timeMap.entries()).map(([time, v]) => ({
-    time,
-    total:      v.total,
-    concluidos: v.concluidos,
-    emAberto:   v.emAberto,
-    slaPercent: v.slaTotal > 0 ? Math.round((v.slaDentro / v.slaTotal) * 100) : null,
-  })).sort((a, b) => b.total - a.total);
+  const timeSnap = new Map<string, { emAberto: number; slaDentro: number; slaTotal: number }>();
+  for (const t of abertos) {
+    if (!t.consultor) continue;
+    const time = grupoToTime(t.grupo);
+    const tm = timeSnap.get(time) ?? { emAberto: 0, slaDentro: 0, slaTotal: 0 };
+    tm.emAberto++;
+    if (t.slaStatus === 'dentro') { tm.slaDentro++; tm.slaTotal++; }
+    else if (t.slaStatus === 'fora') tm.slaTotal++;
+    timeSnap.set(time, tm);
+  }
+  const porTime = [...new Set([...timeFlow.keys(), ...timeSnap.keys()])].map(time => {
+    const f = timeFlow.get(time) ?? { total: 0, concluidos: 0 };
+    const s = timeSnap.get(time) ?? { emAberto: 0, slaDentro: 0, slaTotal: 0 };
+    return {
+      time, total: f.total, concluidos: f.concluidos, emAberto: s.emAberto,
+      slaPercent: s.slaTotal > 0 ? Math.round((s.slaDentro / s.slaTotal) * 100) : null,
+    };
+  }).sort((a, b) => b.total - a.total);
 
-  // ── Por consultor × time (chave composta para evitar distorção) ──────────
-  // Um consultor pode ter tickets em múltiplos grupos/times. Agrupamos por
-  // (consultor + time) para que os subtotais batem com o total do time.
-  const consultorMap = new Map<string, {
-    consultor: string; grupo: string; time: string;
-    total: number; concluidos: number; emAberto: number;
-    slaDentro: number; slaFora: number;
-    somaHoras: number; countHoras: number;
-    porMes: Record<string, number>;
-  }>();
-
+  // ── Por consultor × time ─────────────────────────────────────────────────────
+  type Flow = { consultor: string; grupo: string; time: string; total: number; concluidos: number; porMes: Record<string, number> };
+  const consFlow = new Map<string, Flow>();
   for (const t of tickets) {
     if (!t.consultor) continue;
     const time  = grupoToTime(t.grupo);
-    // Chave composta: consultor + time
     const chave = `${t.consultor}||${time}`;
-    if (!consultorMap.has(chave)) {
-      consultorMap.set(chave, {
-        consultor: t.consultor,
-        grupo:     t.grupo,
-        time,
-        total: 0, concluidos: 0, emAberto: 0,
-        slaDentro: 0, slaFora: 0,
-        somaHoras: 0, countHoras: 0, porMes: {},
-      });
-    }
-    const c = consultorMap.get(chave)!;
+    const c = consFlow.get(chave) ?? { consultor: t.consultor, grupo: t.grupo, time, total: 0, concluidos: 0, porMes: {} };
     c.total++;
     if (concluidoNoPeriodo(t)) {
       c.concluidos++;
-      // Usa conclusao para agrupar por mês; fallback: ultimoTramite
-      const dataRef = t.conclusao ?? (t as any).ultimoTramite;
+      const dataRef = t.conclusao ?? t.ultimoTramite;
       if (dataRef) {
-        const d   = new Date(dataRef);
+        const d = new Date(dataRef);
         const mes = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
         c.porMes[mes] = (c.porMes[mes] ?? 0) + 1;
       }
     }
-    if (t.status === 'Em andamento' || t.status === 'Pendente cliente') c.emAberto++;
+    consFlow.set(chave, c);
+  }
+  type Snap = { grupo: string; emAberto: number; slaDentro: number; slaFora: number; somaHoras: number; countHoras: number };
+  const consSnap = new Map<string, Snap>();
+  for (const t of abertos) {
+    if (!t.consultor) continue;
+    const time  = grupoToTime(t.grupo);
+    const chave = `${t.consultor}||${time}`;
+    const c = consSnap.get(chave) ?? { grupo: t.grupo, emAberto: 0, slaDentro: 0, slaFora: 0, somaHoras: 0, countHoras: 0 };
+    c.emAberto++;
     if (t.slaStatus === 'dentro') c.slaDentro++;
     if (t.slaStatus === 'fora')   c.slaFora++;
     if (t.slaHorasUteis !== null) { c.somaHoras += t.slaHorasUteis; c.countHoras++; }
+    consSnap.set(chave, c);
   }
-
-  const porConsultor = Array.from(consultorMap.values()).map(c => {
-    const slaT       = c.slaDentro + c.slaFora;
-    const slaPercent = slaT > 0 ? Math.round((c.slaDentro / slaT) * 100) : null;
-    const tmaMedio   = c.countHoras > 0 ? Math.round((c.somaHoras / c.countHoras) * 10) / 10 : null;
-    const mesesAtivos = Object.keys(c.porMes).length;
-    const mediaMensal = mesesAtivos > 0 ? Math.round((c.concluidos / mesesAtivos) * 10) / 10 : 0;
+  const porConsultor = [...new Set([...consFlow.keys(), ...consSnap.keys()])].map(chave => {
+    const f = consFlow.get(chave);
+    const s = consSnap.get(chave);
+    const [consultor, time] = chave.split('||');
+    const grupo = f?.grupo ?? s?.grupo ?? '';
+    const total = f?.total ?? 0;
+    const concluidos = f?.concluidos ?? 0;
+    const slaT = (s?.slaDentro ?? 0) + (s?.slaFora ?? 0);
+    const mesesAtivos = f ? Object.keys(f.porMes).length : 0;
     return {
-      consultor: c.consultor, grupo: c.grupo, time: c.time,
-      total: c.total, concluidos: c.concluidos, emAberto: c.emAberto,
-      slaPercent, tmaMedio, mediaMensal, porMes: c.porMes,
+      consultor, grupo, time,
+      total, concluidos, emAberto: s?.emAberto ?? 0,
+      slaPercent: slaT > 0 ? Math.round(((s?.slaDentro ?? 0) / slaT) * 100) : null,
+      tmaMedio: (s && s.countHoras > 0) ? Math.round((s.somaHoras / s.countHoras) * 10) / 10 : null,
+      mediaMensal: mesesAtivos > 0 ? Math.round((concluidos / mesesAtivos) * 10) / 10 : 0,
+      porMes: f?.porMes ?? {},
     };
   }).sort((a, b) => b.total - a.total);
 
-  // ── Série mensal global ───────────────────────────────────────────────────
-  // Quando ano específico: todos os 12 meses daquele ano
-  // Quando mês específico: todos os 12 meses do ano selecionado
-  // Caso contrário: últimos 12 meses a partir de hoje
+  // ── Série mensal global (fluxo) ───────────────────────────────────────────────
   const meses: Record<string, { abertos: number; concluidos: number }> = {};
   const ANO_BASE = 2023;
   if (anoEspecifico) {
-    for (let m = 0; m < 12; m++) {
-      const key = `${anoEspecifico}-${String(m + 1).padStart(2, '0')}`;
-      meses[key] = { abertos: 0, concluidos: 0 };
-    }
+    for (let m = 0; m < 12; m++) meses[`${anoEspecifico}-${String(m + 1).padStart(2, '0')}`] = { abertos: 0, concluidos: 0 };
   } else if (periodo === 'tudo') {
     const inicio = new Date(ANO_BASE, 0, 1);
     const fim    = new Date(agora.getFullYear(), agora.getMonth(), 1);
-    for (const d = new Date(inicio); d <= fim; d.setMonth(d.getMonth() + 1)) {
-      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-      meses[key] = { abertos: 0, concluidos: 0 };
-    }
+    for (const d = new Date(inicio); d <= fim; d.setMonth(d.getMonth() + 1))
+      meses[`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`] = { abertos: 0, concluidos: 0 };
   } else {
     for (let i = 11; i >= 0; i--) {
-      const d   = new Date(agora.getFullYear(), agora.getMonth() - i, 1);
-      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-      meses[key] = { abertos: 0, concluidos: 0 };
+      const d = new Date(agora.getFullYear(), agora.getMonth() - i, 1);
+      meses[`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`] = { abertos: 0, concluidos: 0 };
     }
   }
   for (const t of tickets) {
     const keyAb = `${t.abertura.getFullYear()}-${String(t.abertura.getMonth() + 1).padStart(2, '0')}`;
     if (meses[keyAb]) meses[keyAb].abertos++;
     if (t.conclusao) {
-      const d       = new Date(t.conclusao);
+      const d = new Date(t.conclusao);
       const keyConc = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
       if (meses[keyConc]) meses[keyConc].concluidos++;
     }
   }
   const serieMensal = Object.entries(meses).map(([mes, v]) => ({ mes, ...v }));
 
-  // ── Listas disponíveis para filtros ───────────────────────────────────────
+  // ── Comparativo ANO A ANO (concluídos por mês/ano) + crescimento YTD ──────────
+  // Usa TODOS os concluídos (respeitando time/consultor), independente do período.
+  const concluidosAll = await prisma.ticket.findMany({
+    where: { ...filtroTimeConsultor, status: 'Concluído', conclusao: { not: null } },
+    select: { conclusao: true },
+  });
+  const yoy: Record<number, number[]> = {};
+  const anosSet = new Set<number>();
+  for (const t of concluidosAll) {
+    const d = t.conclusao as Date; const y = d.getFullYear(), m = d.getMonth();
+    anosSet.add(y); (yoy[y] ??= new Array(12).fill(0))[m]++;
+  }
+  const anosT = [...anosSet].sort();
+  const NOMES_MES = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+  const anoAano = NOMES_MES.map((nome, m) => {
+    const linha: Record<string, number | string> = { mes: nome };
+    for (const y of anosT) linha[String(y)] = yoy[y]?.[m] ?? 0;
+    return linha;
+  });
+  // Crescimento comparável: Jan..mês atual, ano vs ano anterior
+  const mesAtual = agora.getMonth();
+  const ytd = (y: number) => (yoy[y] ?? []).slice(0, mesAtual + 1).reduce((s, v) => s + v, 0);
+  const anoResumo = anosT.map((y, i) => {
+    const anterior = i > 0 ? anosT[i - 1] : null;
+    const ytdY = ytd(y), ytdA = anterior !== null ? ytd(anterior) : 0;
+    return {
+      ano: y,
+      total: (yoy[y] ?? []).reduce((s, v) => s + v, 0),
+      ytd: ytdY,
+      cresc: (anterior !== null && ytdA > 0) ? Math.round((ytdY - ytdA) / ytdA * 100) : null,
+    };
+  });
+
   const consultores = [...new Set(tickets.map(t => t.consultor))].filter(Boolean).sort();
   const ultimaColeta = await prisma.colecaoLog.findFirst({
     orderBy: { iniciadoEm: 'desc' },
@@ -234,11 +259,8 @@ export async function GET(req: NextRequest) {
 
   return NextResponse.json({
     kpis: { total, concluidos, emAberto, slaPercent, tmaMedio },
-    porTime,
-    porConsultor,
-    serieMensal,
-    consultores,
-    times: Object.keys(TIMES),
-    ultimaColeta,
+    porTime, porConsultor, serieMensal, consultores,
+    anoAano, anoResumo, mesAtual,
+    times: Object.keys(TIMES), ultimaColeta,
   });
 }

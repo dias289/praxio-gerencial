@@ -1,31 +1,29 @@
-name: Collect Histórico (re-run grupos pendentes)
+name: Backfill Mensal (importação completa e confiável)
+
+# Importa TODOS os tickets dos 5 grupos, mês a mês (evita o limite de export do
+# portal). Disparo manual — rode uma vez para popular o banco com todo o histórico.
 
 on:
   workflow_dispatch:
+    inputs:
+      inicio:
+        description: 'Mês inicial (piso) no formato YYYY-MM'
+        required: false
+        default: '2022-01'
 
 jobs:
-  collect:
+  backfill:
     runs-on: ubuntu-latest
-    timeout-minutes: 35
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - grupo_id: "30"
-            grupo_nome: "Siga Emissor"
-            delay: 0
-          - grupo_id: "32"
-            grupo_nome: "Siga One - OPER"
-            delay: 30
-
-    name: "Grupo ${{ matrix.grupo_nome }}"
+    timeout-minutes: 300
 
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
           cache: 'npm'
+
       - run: npm ci
 
       - name: Cache Playwright
@@ -43,14 +41,11 @@ jobs:
         if: steps.pw-cache.outputs.cache-hit == 'true'
         run: npx playwright install-deps chromium
 
-      - name: Aguarda Neon acordar
-        run: sleep ${{ matrix.delay }}
-
-      - name: "Coleta completa — ${{ matrix.grupo_nome }}"
+      - name: Backfill mensal (todo o histórico)
         run: npx tsx scripts/collect.ts
         env:
-          MODO_COLETA: completa
-          GRUPO_ID: ${{ matrix.grupo_id }}
+          MODO_COLETA: mensal
+          COLETA_INICIO: ${{ github.event.inputs.inicio }}
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           PORTAL_EMAIL: ${{ secrets.PORTAL_EMAIL }}
           PORTAL_SENHA: ${{ secrets.PORTAL_SENHA }}

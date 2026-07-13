@@ -22,9 +22,9 @@ function StatusBadge({ status }: { status: string }) {
     'Concluído':        { icon: CheckCircle,  color: 'text-green-600 bg-green-50'  },
     'Em andamento':     { icon: Clock,        color: 'text-blue-600 bg-blue-50'    },
     'Pendente cliente': { icon: AlertCircle,  color: 'text-yellow-600 bg-yellow-50'},
-    'Cancelado':        { icon: XCircle,      color: 'text-gray-500 bg-gray-50'    },
+    'Cancelado':        { icon: XCircle,      color: 'text-gray-500 dark:text-slate-400 bg-gray-50 dark:bg-slate-700'    },
   };
-  const cfg  = map[status] ?? { icon: Clock, color: 'text-gray-500 bg-gray-50' };
+  const cfg  = map[status] ?? { icon: Clock, color: 'text-gray-500 dark:text-slate-400 bg-gray-50 dark:bg-slate-700' };
   const Icon = cfg.icon;
   return (
     <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${cfg.color}`}>
@@ -37,7 +37,7 @@ function StatusBadge({ status }: { status: string }) {
 function SlaBadge({ status, horas }: { status: string; horas: number | null }) {
   const color = status === 'dentro' ? 'text-green-700 bg-green-50'
               : status === 'fora'   ? 'text-red-700 bg-red-50'
-              :                       'text-gray-500 bg-gray-50';
+              :                       'text-gray-500 dark:text-slate-400 bg-gray-50 dark:bg-slate-700';
   const label = status === 'dentro' ? `✓ ${horas}h` : status === 'fora' ? `✗ ${horas}h` : '—';
   return <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium ${color}`}>{label}</span>;
 }
@@ -78,17 +78,17 @@ export function ConsultorDetailClient({ nome, tickets }: { nome: string; tickets
   return (
     <div className="space-y-6">
       {/* Voltar */}
-      <Link href="/" className="inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-900 transition-colors">
+      <Link href="/" className="inline-flex items-center gap-1.5 text-sm text-gray-500 dark:text-slate-400 hover:text-gray-900 transition-colors">
         <ArrowLeft className="h-4 w-4" />
         Voltar ao dashboard
       </Link>
 
       {/* Cabeçalho */}
-      <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6">
+      <div className="bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-700 shadow-sm p-6">
         <div className="flex items-start justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">{nome.replace(/\s*\(N\d+\)$/, '')}</h1>
-            <p className="text-sm text-gray-500 mt-1">{tickets[0]?.grupo ?? '—'}</p>
+            <h1 className="text-2xl font-bold text-gray-900 dark:text-slate-100">{nome.replace(/\s*\(N\d+\)$/, '')}</h1>
+            <p className="text-sm text-gray-500 dark:text-slate-400 mt-1">{tickets[0]?.grupo ?? '—'}</p>
           </div>
           <div className="grid grid-cols-4 gap-6 text-center">
             {[
@@ -99,7 +99,7 @@ export function ConsultorDetailClient({ nome, tickets }: { nome: string; tickets
             ].map(k => (
               <div key={k.label}>
                 <p className={`text-2xl font-bold ${k.color}`}>{k.value}</p>
-                <p className="text-xs text-gray-400 mt-0.5">{k.label}</p>
+                <p className="text-xs text-gray-400 dark:text-slate-500 mt-0.5">{k.label}</p>
               </div>
             ))}
           </div>
@@ -108,13 +108,13 @@ export function ConsultorDetailClient({ nome, tickets }: { nome: string; tickets
 
       {/* Gráfico mensal */}
       {chartData.length > 0 && (
-        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6">
-          <h2 className="text-sm font-semibold text-gray-700 mb-4">Concluídos por Mês</h2>
+        <div className="bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-700 shadow-sm p-6">
+          <h2 className="text-sm font-semibold text-gray-700 dark:text-slate-200 mb-4">Concluídos por Mês</h2>
           <ResponsiveContainer width="100%" height={200}>
             <BarChart data={chartData}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-              <XAxis dataKey="mes" tick={{ fontSize: 11 }} tickLine={false} />
-              <YAxis tick={{ fontSize: 11 }} tickLine={false} axisLine={false} />
+              <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.18)" />
+              <XAxis dataKey="mes" tick={{ fontSize: 11, fill: '#94a3b8' }} tickLine={false} />
+              <YAxis tick={{ fontSize: 11, fill: '#94a3b8' }} tickLine={false} axisLine={false} />
               <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8, border: '1px solid #e5e7eb' }} />
               <Bar dataKey="concluidos" name="Concluídos" fill="#2563eb" radius={[4,4,0,0]} maxBarSize={40} />
             </BarChart>
@@ -123,10 +123,10 @@ export function ConsultorDetailClient({ nome, tickets }: { nome: string; tickets
       )}
 
       {/* Tabela de tickets */}
-      <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-        <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-gray-700">Tickets ({filtrados.length})</h2>
-          <select className="text-sm border border-gray-200 rounded-lg px-3 py-1.5 bg-white"
+      <div className="bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-700 shadow-sm overflow-hidden">
+        <div className="px-6 py-4 border-b border-gray-100 dark:border-slate-700 flex items-center justify-between">
+          <h2 className="text-sm font-semibold text-gray-700 dark:text-slate-200">Tickets ({filtrados.length})</h2>
+          <select className="text-sm border border-gray-200 dark:border-slate-700 rounded-lg px-3 py-1.5 bg-white dark:bg-slate-800"
             value={filtroStatus} onChange={e => setFiltroStatus(e.target.value)}>
             {statusOptions.map(s => (
               <option key={s} value={s}>{s === 'todos' ? 'Todos os status' : s}</option>
@@ -135,25 +135,25 @@ export function ConsultorDetailClient({ nome, tickets }: { nome: string; tickets
         </div>
         <div className="overflow-x-auto max-h-[500px] overflow-y-auto">
           <table className="w-full text-sm">
-            <thead className="sticky top-0 bg-gray-50 border-b border-gray-100">
+            <thead className="sticky top-0 bg-gray-50 dark:bg-slate-700 border-b border-gray-100 dark:border-slate-700">
               <tr>
-                <th className="text-left px-6 py-3 font-medium text-gray-500 text-xs uppercase">Protocolo</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs uppercase">Assunto</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs uppercase hidden md:table-cell">Cliente</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs uppercase">Status</th>
-                <th className="text-right px-4 py-3 font-medium text-gray-500 text-xs uppercase">SLA</th>
-                <th className="text-right px-4 py-3 font-medium text-gray-500 text-xs uppercase hidden lg:table-cell">Abertura</th>
+                <th className="text-left px-6 py-3 font-medium text-gray-500 dark:text-slate-400 text-xs uppercase">Protocolo</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-500 dark:text-slate-400 text-xs uppercase">Assunto</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-500 dark:text-slate-400 text-xs uppercase hidden md:table-cell">Cliente</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-500 dark:text-slate-400 text-xs uppercase">Status</th>
+                <th className="text-right px-4 py-3 font-medium text-gray-500 dark:text-slate-400 text-xs uppercase">SLA</th>
+                <th className="text-right px-4 py-3 font-medium text-gray-500 dark:text-slate-400 text-xs uppercase hidden lg:table-cell">Abertura</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
               {filtrados.map(t => (
                 <tr key={t.protocolo} className="hover:bg-gray-50 transition-colors">
                   <td className="px-6 py-3 font-mono text-xs text-blue-600">{t.protocolo}</td>
-                  <td className="px-4 py-3 max-w-[280px] truncate text-gray-900" title={t.assunto}>{t.assunto || '—'}</td>
-                  <td className="px-4 py-3 hidden md:table-cell text-gray-500 text-xs truncate max-w-[180px]">{t.cliente}</td>
+                  <td className="px-4 py-3 max-w-[280px] truncate text-gray-900 dark:text-slate-100" title={t.assunto}>{t.assunto || '—'}</td>
+                  <td className="px-4 py-3 hidden md:table-cell text-gray-500 dark:text-slate-400 text-xs truncate max-w-[180px]">{t.cliente}</td>
                   <td className="px-4 py-3"><StatusBadge status={t.status} /></td>
                   <td className="px-4 py-3 text-right"><SlaBadge status={t.slaStatus} horas={t.slaHorasUteis} /></td>
-                  <td className="px-4 py-3 text-right hidden lg:table-cell text-xs text-gray-400 tabular-nums">
+                  <td className="px-4 py-3 text-right hidden lg:table-cell text-xs text-gray-400 dark:text-slate-500 tabular-nums">
                     {new Date(t.abertura).toLocaleDateString('pt-BR')}
                   </td>
                 </tr>

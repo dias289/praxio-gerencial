@@ -90,47 +90,47 @@ export default function UsuariosClient() {
     <div className="space-y-8 max-w-3xl">
       {/* Cabeçalho */}
       <div className="flex items-center gap-4">
-        <Link href="/" className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-900 transition-colors">
+        <Link href="/" className="flex items-center gap-1.5 text-sm text-gray-500 dark:text-slate-400 hover:text-gray-900 transition-colors">
           <ArrowLeft className="h-4 w-4" />
           Dashboard
         </Link>
         <div>
-          <h1 className="text-xl font-semibold text-gray-900 flex items-center gap-2">
+          <h1 className="text-xl font-semibold text-gray-900 dark:text-slate-100 flex items-center gap-2">
             <Users className="h-5 w-5 text-blue-600" />
             Gerenciar Usuários
           </h1>
-          <p className="text-xs text-gray-500 mt-0.5">Usuários com acesso ao dashboard</p>
+          <p className="text-xs text-gray-500 dark:text-slate-400 mt-0.5">Usuários com acesso ao dashboard</p>
         </div>
       </div>
 
       {/* Lista de usuários */}
-      <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-        <div className="px-6 py-4 border-b border-gray-100">
-          <h2 className="text-sm font-semibold text-gray-700">
-            Usuários cadastrados {!loading && <span className="text-gray-400 font-normal">({users.length})</span>}
+      <div className="bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-700 shadow-sm overflow-hidden">
+        <div className="px-6 py-4 border-b border-gray-100 dark:border-slate-700">
+          <h2 className="text-sm font-semibold text-gray-700 dark:text-slate-200">
+            Usuários cadastrados {!loading && <span className="text-gray-400 dark:text-slate-500 font-normal">({users.length})</span>}
           </h2>
         </div>
         {loading ? (
-          <div className="px-6 py-8 text-center text-sm text-gray-400">Carregando...</div>
+          <div className="px-6 py-8 text-center text-sm text-gray-400 dark:text-slate-500">Carregando...</div>
         ) : users.length === 0 ? (
-          <div className="px-6 py-8 text-center text-sm text-gray-400">Nenhum usuário.</div>
+          <div className="px-6 py-8 text-center text-sm text-gray-400 dark:text-slate-500">Nenhum usuário.</div>
         ) : (
           <table className="w-full text-sm">
             <thead>
-              <tr className="bg-gray-50 border-b border-gray-100">
-                <th className="text-left px-6 py-3 text-xs font-medium text-gray-500 uppercase">Nome</th>
-                <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase">Email</th>
-                <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase hidden sm:table-cell">Criado em</th>
-                <th className="px-4 py-3 text-xs font-medium text-gray-500 uppercase">Ações</th>
+              <tr className="bg-gray-50 dark:bg-slate-700 border-b border-gray-100 dark:border-slate-700">
+                <th className="text-left px-6 py-3 text-xs font-medium text-gray-500 dark:text-slate-400 uppercase">Nome</th>
+                <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 dark:text-slate-400 uppercase">Email</th>
+                <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 dark:text-slate-400 uppercase hidden sm:table-cell">Criado em</th>
+                <th className="px-4 py-3 text-xs font-medium text-gray-500 dark:text-slate-400 uppercase">Ações</th>
               </tr>
             </thead>
             <tbody>
               {users.map(u => (
                 <>
-                  <tr key={u.id} className="border-b border-gray-50 hover:bg-gray-50 transition-colors">
-                    <td className="px-6 py-3.5 font-medium text-gray-900">{u.name}</td>
-                    <td className="px-4 py-3.5 text-gray-600">{u.email}</td>
-                    <td className="px-4 py-3.5 text-gray-400 text-xs hidden sm:table-cell">
+                  <tr key={u.id} className="border-b border-gray-50 dark:border-slate-700 hover:bg-gray-50 transition-colors">
+                    <td className="px-6 py-3.5 font-medium text-gray-900 dark:text-slate-100">{u.name}</td>
+                    <td className="px-4 py-3.5 text-gray-600 dark:text-slate-300">{u.email}</td>
+                    <td className="px-4 py-3.5 text-gray-400 dark:text-slate-500 text-xs hidden sm:table-cell">
                       {new Date(u.createdAt).toLocaleDateString('pt-BR')}
                     </td>
                     <td className="px-4 py-3.5">
@@ -138,13 +138,13 @@ export default function UsuariosClient() {
                         <button
                           onClick={() => { setTrocandoId(trocandoId === u.id ? null : u.id); setNovaSenha(''); }}
                           title="Alterar senha"
-                          className="p-1.5 rounded-lg text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition-colors">
+                          className="p-1.5 rounded-lg text-gray-400 dark:text-slate-500 hover:text-blue-600 hover:bg-blue-50 transition-colors">
                           <KeyRound className="h-4 w-4" />
                         </button>
                         <button
                           onClick={() => handleDelete(u.id, u.email)}
                           title="Remover usuário"
-                          className="p-1.5 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors">
+                          className="p-1.5 rounded-lg text-gray-400 dark:text-slate-500 hover:text-red-600 hover:bg-red-50 transition-colors">
                           <Trash2 className="h-4 w-4" />
                         </button>
                       </div>
@@ -160,7 +160,7 @@ export default function UsuariosClient() {
                             value={novaSenha}
                             onChange={e => setNovaSenha(e.target.value)}
                             placeholder="Mínimo 6 caracteres"
-                            className="flex-1 text-sm px-3 py-1.5 rounded-lg border border-blue-200 bg-white focus:outline-none focus:ring-2 focus:ring-blue-400"
+                            className="flex-1 text-sm px-3 py-1.5 rounded-lg border border-blue-200 bg-white dark:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-400"
                           />
                           <button
                             onClick={() => handleChangeSenha(u.id)}
@@ -181,36 +181,36 @@ export default function UsuariosClient() {
       </div>
 
       {/* Formulário de criação */}
-      <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6">
-        <h2 className="text-sm font-semibold text-gray-700 mb-4 flex items-center gap-2">
+      <div className="bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-700 shadow-sm p-6">
+        <h2 className="text-sm font-semibold text-gray-700 dark:text-slate-200 mb-4 flex items-center gap-2">
           <UserPlus className="h-4 w-4 text-green-600" />
           Adicionar usuário
         </h2>
         <form onSubmit={handleCreate} className="space-y-4">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">Nome completo</label>
+              <label className="block text-xs font-medium text-gray-600 dark:text-slate-300 mb-1">Nome completo</label>
               <input
                 type="text" required value={nome} onChange={e => setNome(e.target.value)}
                 placeholder="Ex: João Silva"
-                className="w-full text-sm px-3 py-2 rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full text-sm px-3 py-2 rounded-lg border border-gray-200 dark:border-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
             </div>
             <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">Email</label>
+              <label className="block text-xs font-medium text-gray-600 dark:text-slate-300 mb-1">Email</label>
               <input
                 type="email" required value={email} onChange={e => setEmail(e.target.value)}
                 placeholder="joao@empresa.com"
-                className="w-full text-sm px-3 py-2 rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full text-sm px-3 py-2 rounded-lg border border-gray-200 dark:border-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
             </div>
           </div>
           <div className="sm:w-64">
-            <label className="block text-xs font-medium text-gray-600 mb-1">Senha inicial</label>
+            <label className="block text-xs font-medium text-gray-600 dark:text-slate-300 mb-1">Senha inicial</label>
             <input
               type="password" required value={senha} onChange={e => setSenha(e.target.value)}
               placeholder="Mínimo 6 caracteres"
-              className="w-full text-sm px-3 py-2 rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full text-sm px-3 py-2 rounded-lg border border-gray-200 dark:border-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
           </div>
           {msg && (

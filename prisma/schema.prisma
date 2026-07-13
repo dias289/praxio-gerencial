@@ -31,6 +31,28 @@ model Ticket {
   @@index([conclusao])
 }
 
+model Chamada {
+  id           String   @id @default(cuid())
+  dataHora     DateTime
+  fila         String   @default("")
+  origemNome   String   @default("")
+  origemNumero String   @default("")
+  ramal        String   @default("")
+  agente       String   @default("")
+  tempoEspera  Int      @default(0)   // segundos
+  duracao      Int      @default(0)   // segundos
+  encerradaPor String   @default("")
+  categoria    String   @default("atendida") // atendida|abandonada|excedida|desconectada
+  coletadoEm   DateTime @default(now())
+
+  // Chave de deduplicação (não há ID nativo no relatório do vpabx)
+  @@unique([dataHora, fila, ramal, origemNumero, categoria], name: "chamada_uniq")
+  @@index([dataHora])
+  @@index([fila])
+  @@index([agente])
+  @@index([categoria])
+}
+
 model User {
   id           String   @id @default(cuid())
   email        String   @unique

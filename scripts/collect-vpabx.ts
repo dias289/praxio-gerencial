@@ -21,15 +21,15 @@ import { lerCodigo2FA } from '../lib/imap-2fa.js';
 dotenv.config({ path: path.join(process.cwd(), '.env.local') });
 dotenv.config({ path: path.join(process.cwd(), '.env') });
 
-const BASE  = process.env.VPABX_URL  ?? 'https://praxio.vpabx.com.br:8127';
-const USER  = process.env.VPABX_USER ?? 'felipedias';
+const BASE  = process.env.VPABX_URL  || 'https://praxio.vpabx.com.br:8127';
+const USER  = process.env.VPABX_USER || 'felipedias';
 const PASS  = process.env.VPABX_PASS ?? '';
 const MODO  = (process.env.MODO_COLETA ?? 'incremental') as 'incremental' | 'mensal';
 
 const IMAP = {
-  host: process.env.IMAP_HOST ?? 'email-ssl.com.br',
-  port: Number(process.env.IMAP_PORT ?? 143),
-  secure: (process.env.IMAP_SECURE ?? 'false') === 'true',
+  host: process.env.IMAP_HOST || 'email-ssl.com.br',
+  port: Number(process.env.IMAP_PORT || 143),
+  secure: (process.env.IMAP_SECURE || 'false') === 'true',
   user: process.env.IMAP_USER ?? '',
   pass: process.env.IMAP_PASS ?? '',
 };

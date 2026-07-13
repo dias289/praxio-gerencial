@@ -41,10 +41,18 @@ export async function GET(req: NextRequest) {
   let dataInicio: Date | null = null;
   let dataFim:    Date | null = null;
 
+  // Intervalo personalizado por dia (De/Até) — tem prioridade sobre os presets.
+  const deParam = sp.get('de'); const ateParam = sp.get('ate');
+  const rangeValido = !!(deParam && ateParam && /^\d{4}-\d{2}-\d{2}$/.test(deParam) && /^\d{4}-\d{2}-\d{2}$/.test(ateParam));
   const anoEspecifico = /^\d{4}$/.test(periodo) ? parseInt(periodo) : null;
   const mesEspecifico = mesParam ? parseInt(mesParam) : null;
 
-  if (anoEspecifico) {
+  if (rangeValido) {
+    const [y1, m1, d1] = (deParam as string).split('-').map(Number);
+    const [y2, m2, d2] = (ateParam as string).split('-').map(Number);
+    dataInicio = new Date(y1, m1 - 1, d1);
+    dataFim    = new Date(y2, m2 - 1, d2 + 1); // exclusivo: inclui o dia final
+  } else if (anoEspecifico) {
     if (mesEspecifico && mesEspecifico >= 1 && mesEspecifico <= 12) {
       dataInicio = new Date(anoEspecifico, mesEspecifico - 1, 1);
       dataFim    = new Date(anoEspecifico, mesEspecifico,     1);
@@ -96,7 +104,8 @@ export async function GET(req: NextRequest) {
 
   const concluidoNoPeriodo = (t: { status: string; conclusao: Date | null }) =>
     t.status === 'Concluído' &&
-    (!dataInicio || (t.conclusao !== null && t.conclusao >= dataInicio));
+    (!dataInicio || (t.conclusao !== null && t.conclusao >= dataInicio)) &&
+    (!dataFim   || (t.conclusao !== null && t.conclusao <  dataFim));
 
   // ── KPIs globais ───────────────────────────────────────────────────────────
   const total      = tickets.length;
@@ -193,7 +202,13 @@ export async function GET(req: NextRequest) {
   // ── Série mensal global (fluxo) ───────────────────────────────────────────────
   const meses: Record<string, { abertos: number; concluidos: number }> = {};
   const ANO_BASE = 2023;
-  if (anoEspecifico) {
+  if (rangeValido && dataInicio && dataFim) {
+    const cur = new Date(dataInicio.getFullYear(), dataInicio.getMonth(), 1);
+    const ultimo = new Date(dataFim.getTime() - 86_400_000);
+    const fimM = new Date(ultimo.getFullYear(), ultimo.getMonth(), 1);
+    for (; cur <= fimM; cur.setMonth(cur.getMonth() + 1))
+      meses[`${cur.getFullYear()}-${String(cur.getMonth() + 1).padStart(2, '0')}`] = { abertos: 0, concluidos: 0 };
+  } else if (anoEspecifico) {
     for (let m = 0; m < 12; m++) meses[`${anoEspecifico}-${String(m + 1).padStart(2, '0')}`] = { abertos: 0, concluidos: 0 };
   } else if (periodo === 'tudo') {
     const inicio = new Date(ANO_BASE, 0, 1);

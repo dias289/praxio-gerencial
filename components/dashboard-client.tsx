@@ -116,6 +116,8 @@ export function DashboardClient() {
   const [loading,  setLoading]  = useState(true);
   const [periodo,  setPeriodo]  = useState('tudo');
   const [mes,      setMes]      = useState('0');  // 0 = todo o ano
+  const [de,       setDe]       = useState('');
+  const [ate,      setAte]      = useState('');
   const [timeFiltro, setTimeFiltro] = useState('todos');
   const [consultor, setConsultor]   = useState('todos');
   const [expandidos, setExpandidos] = useState<Record<string, boolean>>({ Administrativo: true, Operacional: true });
@@ -127,11 +129,12 @@ export function DashboardClient() {
     try {
       const params = new URLSearchParams({ periodo, time: timeFiltro, consultor });
       if (isAnoEspecifico && mes !== '0') params.set('mes', mes);
+      if (de && ate) { params.set('de', de); params.set('ate', ate); }
       const res    = await fetch(`/api/metrics?${params}`);
       const json   = await res.json();
       setData(json);
     } finally { setLoading(false); }
-  }, [periodo, mes, timeFiltro, consultor, isAnoEspecifico]);
+  }, [periodo, mes, timeFiltro, consultor, isAnoEspecifico, de, ate]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -168,8 +171,8 @@ export function DashboardClient() {
           )}
         </div>
         <div className="flex items-center gap-2 flex-wrap">
-          <select className="text-sm border border-gray-200 dark:border-slate-700 rounded-lg px-3 py-1.5 bg-white dark:bg-slate-800 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-            value={periodo} onChange={e => { setPeriodo(e.target.value); setMes('0'); }}>
+          <select className="text-sm border border-gray-200 dark:border-slate-700 rounded-lg px-3 py-1.5 bg-white dark:bg-slate-800 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-40"
+            value={periodo} disabled={!!(de && ate)} onChange={e => { setPeriodo(e.target.value); setMes('0'); }}>
             {PERIODOS.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
           </select>
           {isAnoEspecifico && (
@@ -179,6 +182,17 @@ export function DashboardClient() {
               {MESES.map((m, i) => <option key={i+1} value={String(i+1)}>{m}</option>)}
             </select>
           )}
+          <div className="flex items-center gap-1 text-sm">
+            <input type="date" value={de} max={ate || undefined} onChange={e => setDe(e.target.value)} title="Data inicial"
+              className="border border-gray-200 dark:border-slate-700 rounded-lg px-2 py-1.5 bg-white dark:bg-slate-800 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            <span className="text-gray-400 dark:text-slate-500">até</span>
+            <input type="date" value={ate} min={de || undefined} onChange={e => setAte(e.target.value)} title="Data final"
+              className="border border-gray-200 dark:border-slate-700 rounded-lg px-2 py-1.5 bg-white dark:bg-slate-800 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            {(de || ate) && (
+              <button onClick={() => { setDe(''); setAte(''); }} title="Limpar intervalo"
+                className="text-gray-400 hover:text-gray-700 dark:hover:text-slate-200 px-1 text-base leading-none">×</button>
+            )}
+          </div>
           <select className="text-sm border border-gray-200 dark:border-slate-700 rounded-lg px-3 py-1.5 bg-white dark:bg-slate-800 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
             value={timeFiltro} onChange={e => setTimeFiltro(e.target.value)}>
             <option value="todos">Todos os times</option>

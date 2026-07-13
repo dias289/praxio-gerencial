@@ -71,7 +71,15 @@ function splitCsvLine(line: string): string[] {
 // ── Login + 2FA ────────────────────────────────────────────────────────────────
 async function login(page: Page): Promise<void> {
   const inicioLogin = Date.now();
-  await page.goto(`${BASE}/`, { waitUntil: 'domcontentloaded', timeout: 30_000 });
+  // goto tolerante: timeout maior + 3 tentativas (o vpabx pode responder devagar
+  // de fora da rede; se bloquear IP de datacenter, aqui vai falhar de forma clara).
+  let abriu = false;
+  for (let tent = 1; tent <= 3 && !abriu; tent++) {
+    abriu = await page.goto(`${BASE}/`, { waitUntil: 'domcontentloaded', timeout: 60_000 })
+      .then(() => true)
+      .catch((e: unknown) => { log(`   goto ${BASE} tentativa ${tent} falhou: ${(e as Error).message}`); return false; });
+  }
+  if (!abriu) throw new Error(`Não consegui abrir ${BASE} (o vpabx pode barrar IPs de datacenter, como o do GitHub — nesse caso a coleta precisa rodar de uma máquina na rede que o alcança).`);
   await page.fill('#login', USER);
   await page.fill('#password', PASS);
   await page.click('#autenticacao');

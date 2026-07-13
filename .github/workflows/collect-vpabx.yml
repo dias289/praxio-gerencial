@@ -4,8 +4,9 @@ name: Coleta vpabx (chamadas + 2FA por e-mail)
 # Disparo manual: escolha 'incremental' (mês atual + anterior) ou 'mensal' (histórico).
 
 on:
-  schedule:
-    - cron: '0 6 * * *'   # diário 06:00 UTC = 03:00 BRT (modo incremental)
+  # O vpabx (PABX interno, porta 8127) NAO e acessivel dos servidores do GitHub —
+  # so de uma rede que alcance praxio.vpabx.com.br. Por isso a coleta roda LOCALMENTE
+  # (Agendador de Tarefas do Windows, via run-vpabx.bat). Aqui fica so o disparo manual.
   workflow_dispatch:
     inputs:
       modo:
